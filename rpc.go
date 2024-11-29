@@ -33,6 +33,7 @@ type RpcPeer struct {
 	services      map[string]interface{}
 	nextRequestID uint32
 	mu            sync.Mutex
+	writeMu       sync.Mutex
 	pendingCalls  map[uint32]chan []byte
 	onStreamClose StreamCloseHandler
 }
@@ -199,6 +200,9 @@ func (p *RpcPeer) readMessage() (uint32, uint32, string, []byte, error) {
 }
 
 func (p *RpcPeer) writeRequest(requestID uint32, methodName string, payload []byte) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
 	methodNameBytes := []byte(methodName)
 	totalLength := uint32(len(payload) + len(methodNameBytes) + 5)
 
@@ -227,6 +231,9 @@ func (p *RpcPeer) writeResponse(requestID uint32, payload []byte) error {
 	requestID &= RequestIDMask
 
 	// Set MSB for response
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
 	responseID := requestID | RequestIDMSB
 
 	// Validate the resulting ID
