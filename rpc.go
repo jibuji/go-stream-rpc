@@ -3,6 +3,7 @@ package streamrpc
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -54,11 +55,28 @@ func (p *RpcPeer) RegisterService(name string, service interface{}) {
 func (p *RpcPeer) getNextRequestID() uint32 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	id := p.nextRequestID
-	p.nextRequestID = (p.nextRequestID + 1) & RequestIDMask
+
+	// Never use ID 0
 	if p.nextRequestID == 0 {
 		p.nextRequestID = 1
 	}
+
+	id := p.nextRequestID
+
+	// Increment and mask, ensuring we don't exceed RequestIDMask
+	p.nextRequestID = (p.nextRequestID + 1) & RequestIDMask
+
+	// Double-check we haven't wrapped to 0
+	if p.nextRequestID == 0 {
+		p.nextRequestID = 1
+	}
+
+	// Ensure the ID we're returning doesn't have MSB set
+	if (id & RequestIDMSB) != 0 {
+		// This shouldn't happen with proper masking, but let's be safe
+		id &= RequestIDMask
+	}
+
 	return id
 }
 
@@ -69,6 +87,7 @@ func (p *RpcPeer) Call(methodName string, request proto.Message, response proto.
 	}
 
 	requestID := p.getNextRequestID()
+	fmt.Println("requestID: ", requestID)
 	responseChan := make(chan []byte, 1)
 
 	p.mu.Lock()
@@ -137,8 +156,8 @@ func (p *RpcPeer) readMessage() (uint32, uint32, string, []byte, error) {
 		return 0, 0, "", nil, err
 	}
 
-	if length > MaxMessageSize {
-		return 0, 0, "", nil, fmt.Errorf("message too large: %d bytes", length)
+	if length < 4 || length > MaxMessageSize {
+		return 0, 0, "", nil, fmt.Errorf("invalid message length: %d bytes", length)
 	}
 
 	var requestID uint32
@@ -204,7 +223,17 @@ func (p *RpcPeer) writeRequest(requestID uint32, methodName string, payload []by
 }
 
 func (p *RpcPeer) writeResponse(requestID uint32, payload []byte) error {
+	// Ensure the incoming requestID doesn't have MSB set
+	requestID &= RequestIDMask
+
+	// Set MSB for response
 	responseID := requestID | RequestIDMSB
+
+	// Validate the resulting ID
+	if (responseID & RequestIDMask) != requestID {
+		return fmt.Errorf("invalid response ID generated: original=%d, response=%d", requestID, responseID)
+	}
+
 	totalLength := uint32(len(payload) + 4)
 
 	if err := binary.Write(p.stream, binary.BigEndian, totalLength); err != nil {
@@ -229,6 +258,7 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	serviceName, methodName := parts[0], parts[1]
 	service, ok := p.services[serviceName]
 	if !ok {
+		fmt.Printf("Service not found: %s\n", serviceName)
 		p.writeResponse(requestID, []byte(fmt.Sprintf("service %s not found", serviceName)))
 		return
 	}
@@ -236,6 +266,7 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	serviceValue := reflect.ValueOf(service)
 	method := serviceValue.MethodByName(methodName)
 	if !method.IsValid() {
+		fmt.Printf("Method not found: %s.%s\n", serviceName, methodName)
 		p.writeResponse(requestID, []byte(fmt.Sprintf("method %s not found", methodName)))
 		return
 	}
@@ -251,6 +282,7 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	requestMsgType := methodType.In(1).Elem()
 	requestMsg := reflect.New(requestMsgType).Interface().(proto.Message)
 	if err := proto.Unmarshal(payload, requestMsg); err != nil {
+		fmt.Printf("Unmarshal error: %v\n", err)
 		p.writeResponse(requestID, []byte(fmt.Sprintf("failed to unmarshal request: %v", err)))
 		return
 	}
@@ -306,3 +338,5 @@ func (p *RpcPeer) OnStreamClose(handler StreamCloseHandler) {
 	defer p.mu.Unlock()
 	p.onStreamClose = handler
 }
+
+var ErrNotImplemented = errors.New("method not implemented")

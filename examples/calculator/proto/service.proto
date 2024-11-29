@@ -1,9 +1,7 @@
 syntax = "proto3";
+package calculator;
 
-package streamrpc;
-option go_package = "stream-rpc/proto";
 
-// Define your service
 service Calculator {
   rpc Add(AddRequest) returns (AddResponse);
   rpc Multiply(MultiplyRequest) returns (MultiplyResponse);

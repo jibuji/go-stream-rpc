@@ -1,17 +1,18 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	rpc "stream-rpc"
 	proto "stream-rpc/examples/calculator/proto"
 	calculator "stream-rpc/examples/calculator/service"
 	stream "stream-rpc/stream/libp2p"
 	"time"
+
+	"crypto/rand"
+	"encoding/hex"
+	"io/ioutil"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -51,7 +52,7 @@ func handleStream(s network.Stream) {
 	peer := rpc.NewRpcPeer(libp2pStream)
 	defer peer.Close()
 
-	// Register the calculator service
+	// Register the calculator service using the generated Register function
 	peer.RegisterService("Calculator", &calculator.CalculatorService{})
 	done := make(chan struct{})
 	// Handle stream closure
