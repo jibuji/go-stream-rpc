@@ -4,11 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	rpc "stream-rpc"
-	proto "stream-rpc/examples/calculator/proto"
-	calculator "stream-rpc/examples/calculator/proto/service"
-	stream "stream-rpc/stream/libp2p"
 	"time"
+
+	rpc "github.com/jibuji/stream-rpc"
+	proto "github.com/jibuji/stream-rpc/examples/calculator/proto"
+	calculator "github.com/jibuji/stream-rpc/examples/calculator/proto/service"
+	stream "github.com/jibuji/stream-rpc/stream/libp2p"
 
 	"crypto/rand"
 	"encoding/hex"

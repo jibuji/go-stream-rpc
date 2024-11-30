@@ -2,7 +2,7 @@
 package proto
 
 import (
-	rpc "stream-rpc"
+	rpc "github.com/jibuji/stream-rpc"
 	"context"
 )
 

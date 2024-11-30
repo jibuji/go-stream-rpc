@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"stream-rpc/stream/tcp"
+	"github.com/jibuji/stream-rpc/stream/tcp"
 )
 
 func TestTCPStream_ReadWrite(t *testing.T) {

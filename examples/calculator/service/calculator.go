@@ -3,7 +3,8 @@ package calculator
 import (
 	"context"
 	"fmt"
-	proto "stream-rpc/examples/calculator/proto"
+
+	proto "github.com/jibuji/stream-rpc/examples/calculator/proto"
 )
 
 type CalculatorService struct {
