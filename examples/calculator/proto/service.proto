@@ -1,6 +1,7 @@
 syntax = "proto3";
 package calculator;
 
+option go_package = "stream-rpc/examples/calculator/proto";
 
 service Calculator {
   rpc Add(AddRequest) returns (AddResponse);

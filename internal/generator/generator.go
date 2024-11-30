@@ -18,6 +18,14 @@ type TemplateData struct {
 	Methods      []Method
 }
 
+func (m Method) Signature() string {
+	return "(" + "ctx context.Context, req *" + m.InputType + ") *" + m.OutputType
+}
+
+func (m Method) CallSignature() string {
+	return "(ctx, req)"
+}
+
 func GenerateClient(w io.Writer, data TemplateData) error {
 	var buf bytes.Buffer
 	if err := clientStubTemplate.Execute(&buf, data); err != nil {

@@ -13,20 +13,20 @@ func NewCalculatorClient(peer *rpc.RpcPeer) *CalculatorClient {
 	return &CalculatorClient{peer: peer}
 }
 
-func (c *CalculatorClient) Add(req *AddRequest) (*AddResponse, error) {
+func (c *CalculatorClient) Add(req *AddRequest) *AddResponse {
 	resp := &AddResponse{}
 	err := c.peer.Call("Calculator.Add", req, resp)
 	if err != nil {
-		return nil, err
+		return nil
 	}
-	return resp, nil
+	return resp
 }
 
-func (c *CalculatorClient) Multiply(req *MultiplyRequest) (*MultiplyResponse, error) {
+func (c *CalculatorClient) Multiply(req *MultiplyRequest) *MultiplyResponse {
 	resp := &MultiplyResponse{}
 	err := c.peer.Call("Calculator.Multiply", req, resp)
 	if err != nil {
-		return nil, err
+		return nil
 	}
-	return resp, nil
+	return resp
 }

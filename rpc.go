@@ -88,7 +88,6 @@ func (p *RpcPeer) Call(methodName string, request proto.Message, response proto.
 	}
 
 	requestID := p.getNextRequestID()
-	fmt.Println("requestID: ", requestID)
 	responseChan := make(chan []byte, 1)
 
 	p.mu.Lock()
@@ -107,6 +106,14 @@ func (p *RpcPeer) Call(methodName string, request proto.Message, response proto.
 
 	select {
 	case responseBytes := <-responseChan:
+		// Check if it's an error response by looking at the second MSB
+		if (requestID & uint32(0x40000000)) != 0 {
+			rpcErr, err := p.readErrorResponse(responseBytes)
+			if err != nil {
+				return fmt.Errorf("failed to read error response: %v", err)
+			}
+			return rpcErr
+		}
 		return proto.Unmarshal(responseBytes, response)
 	case <-time.After(30 * time.Second):
 		return fmt.Errorf("RPC call timeout")
@@ -258,15 +265,14 @@ func (p *RpcPeer) writeResponse(requestID uint32, payload []byte) error {
 func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []byte) {
 	parts := strings.Split(methodName, ".")
 	if len(parts) != 2 {
-		p.writeResponse(requestID, []byte("invalid method name format"))
+		p.writeErrorResponse(requestID, ErrorCodeInvalidRequest, "invalid method name format")
 		return
 	}
 
 	serviceName, methodName := parts[0], parts[1]
 	service, ok := p.services[serviceName]
 	if !ok {
-		fmt.Printf("Service not found: %s\n", serviceName)
-		p.writeResponse(requestID, []byte(fmt.Sprintf("service %s not found", serviceName)))
+		p.writeErrorResponse(requestID, ErrorCodeMethodNotFound, fmt.Sprintf("service %s not found", serviceName))
 		return
 	}
 
@@ -274,14 +280,14 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	method := serviceValue.MethodByName(methodName)
 	if !method.IsValid() {
 		fmt.Printf("Method not found: %s.%s\n", serviceName, methodName)
-		p.writeResponse(requestID, []byte(fmt.Sprintf("method %s not found", methodName)))
+		p.writeErrorResponse(requestID, ErrorCodeMethodNotFound, fmt.Sprintf("method %s not found", methodName))
 		return
 	}
 
 	// Create the appropriate request message type
 	methodType := method.Type()
 	if methodType.NumIn() != 2 { // Context and request message
-		p.writeResponse(requestID, []byte("invalid method signature"))
+		p.writeErrorResponse(requestID, ErrorCodeInvalidRequest, "invalid method signature")
 		return
 	}
 
@@ -290,7 +296,7 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	requestMsg := reflect.New(requestMsgType).Interface().(proto.Message)
 	if err := proto.Unmarshal(payload, requestMsg); err != nil {
 		fmt.Printf("Unmarshal error: %v\n", err)
-		p.writeResponse(requestID, []byte(fmt.Sprintf("failed to unmarshal request: %v", err)))
+		p.writeErrorResponse(requestID, ErrorCodeInternalError, fmt.Sprintf("failed to unmarshal request: %v", err))
 		return
 	}
 
@@ -300,15 +306,8 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 		reflect.ValueOf(requestMsg),
 	})
 
-	if len(results) != 2 {
-		p.writeResponse(requestID, []byte("invalid method return values"))
-		return
-	}
-
-	// Check for error
-	if !results[1].IsNil() {
-		err := results[1].Interface().(error)
-		p.writeResponse(requestID, []byte(err.Error()))
+	if len(results) != 1 {
+		p.writeErrorResponse(requestID, ErrorCodeInternalError, "invalid method return values, should be only one return value")
 		return
 	}
 
@@ -316,7 +315,7 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	response := results[0].Interface().(proto.Message)
 	responseBytes, err := proto.Marshal(response)
 	if err != nil {
-		p.writeResponse(requestID, []byte(fmt.Sprintf("failed to marshal response: %v", err)))
+		p.writeErrorResponse(requestID, ErrorCodeInternalError, fmt.Sprintf("failed to marshal response: %v", err))
 		return
 	}
 
@@ -347,3 +346,75 @@ func (p *RpcPeer) OnStreamClose(handler StreamCloseHandler) {
 }
 
 var ErrNotImplemented = errors.New("method not implemented")
+
+// ErrorCode represents different types of framework-level errors
+type ErrorCode uint32
+
+const (
+	ErrorCodeUnknown ErrorCode = iota
+	ErrorCodeMethodNotFound
+	ErrorCodeInvalidRequest
+	ErrorCodeMalformedRequest
+	ErrorCodeInvalidMessageFormat
+	ErrorCodeInternalError
+)
+
+// RPCError represents a framework-level RPC error
+type RPCError struct {
+	Code    ErrorCode
+	Message string
+}
+
+func (e *RPCError) Error() string {
+	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
+}
+
+func (p *RpcPeer) writeErrorResponse(requestID uint32, code ErrorCode, message string) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
+	// Convert message to bytes
+	messageBytes := []byte(message)
+
+	// Total length = 4 (errorCode) + len(message)
+	totalLength := uint32(4 + len(messageBytes))
+
+	// Set MSB for response and second MSB for error
+	responseID := (requestID & RequestIDMask) | RequestIDMSB | uint32(0x40000000)
+
+	// Write total length
+	if err := binary.Write(p.stream, binary.BigEndian, totalLength); err != nil {
+		return err
+	}
+
+	// Write response ID
+	if err := binary.Write(p.stream, binary.BigEndian, responseID); err != nil {
+		return err
+	}
+
+	// Write error code
+	if err := binary.Write(p.stream, binary.BigEndian, uint32(code)); err != nil {
+		return err
+	}
+
+	// Write error message
+	_, err := p.stream.Write(messageBytes)
+	return err
+}
+
+func (p *RpcPeer) readErrorResponse(payload []byte) (*RPCError, error) {
+	if len(payload) < 4 {
+		return nil, fmt.Errorf("error payload too short")
+	}
+
+	// Read error code
+	errorCode := ErrorCode(binary.BigEndian.Uint32(payload[:4]))
+
+	// Read error message
+	message := string(payload[4:])
+
+	return &RPCError{
+		Code:    errorCode,
+		Message: message,
+	}, nil
+}

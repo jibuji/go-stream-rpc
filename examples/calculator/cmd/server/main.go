@@ -9,7 +9,7 @@ import (
 	"log"
 	rpc "stream-rpc"
 	proto "stream-rpc/examples/calculator/proto"
-	calculator "stream-rpc/examples/calculator/service"
+	calculator "stream-rpc/examples/calculator/proto/service"
 	stream "stream-rpc/stream/libp2p"
 	"time"
 

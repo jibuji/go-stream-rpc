@@ -6,7 +6,7 @@ import (
 	"log"
 	rpc "stream-rpc"
 	proto "stream-rpc/examples/calculator/proto"
-	calculator "stream-rpc/examples/calculator/service"
+	calculator "stream-rpc/examples/calculator/proto/service"
 	stream "stream-rpc/stream/libp2p"
 	"time"
 
@@ -23,20 +23,21 @@ import (
 const protocolID = "/calculator/1.0.0"
 
 func makeServerCalculation(peer *rpc.RpcPeer, a, b int32) {
+	calculatorClient := proto.NewCalculatorClient(peer)
 	// Test Add
 	addReq := &proto.AddRequest{A: a, B: b}
-	addResp := &proto.AddResponse{}
-	if err := peer.Call("Calculator.Add", addReq, addResp); err != nil {
-		log.Printf("Server Add error: %v\n", err)
+	addResp := calculatorClient.Add(addReq)
+	if addResp == nil {
+		log.Printf("Server Add error: nil response\n")
 		return
 	}
 	fmt.Printf("Server: %d + %d = %d\n", a, b, addResp.Result)
 
 	// Test Multiply
 	mulReq := &proto.MultiplyRequest{A: a, B: b}
-	mulResp := &proto.MultiplyResponse{}
-	if err := peer.Call("Calculator.Multiply", mulReq, mulResp); err != nil {
-		log.Printf("Server Multiply error: %v\n", err)
+	mulResp := calculatorClient.Multiply(mulReq)
+	if mulResp == nil {
+		log.Printf("Server Multiply error: nil response\n")
 		return
 	}
 	fmt.Printf("Server: %d * %d = %d\n", a, b, mulResp.Result)

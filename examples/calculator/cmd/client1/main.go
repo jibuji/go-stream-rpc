@@ -7,7 +7,7 @@ import (
 	"log"
 	rpc "stream-rpc"
 	proto "stream-rpc/examples/calculator/proto"
-	calculator "stream-rpc/examples/calculator/service"
+	calculator "stream-rpc/examples/calculator/proto/service"
 	stream "stream-rpc/stream/libp2p"
 	"time"
 
@@ -64,7 +64,8 @@ func main() {
 	defer peer.Close()
 
 	// Register the calculator service using the generated Register function
-	peer.RegisterService("Calculator", &calculator.CalculatorService{})
+	// peer.RegisterService("Calculator", &calculator.CalculatorService{})
+	proto.RegisterCalculatorServer(peer, &calculator.CalculatorService{})
 	// Create calculator client
 	calculatorClient := proto.NewCalculatorClient(peer)
 
@@ -89,16 +90,16 @@ func main() {
 			a, b := int32(i), int32(i+1)
 
 			// Much simpler RPC calls
-			addResp, err := calculatorClient.Add(&proto.AddRequest{A: a, B: b})
-			if err != nil {
-				log.Printf("Add error: %v\n", err)
+			addResp := calculatorClient.Add(&proto.AddRequest{A: a, B: b})
+			if addResp == nil {
+				log.Printf("Add error: nil response\n")
 				continue
 			}
 			fmt.Printf("Client: %d + %d = %d\n", a, b, addResp.Result)
 
-			mulResp, err := calculatorClient.Multiply(&proto.MultiplyRequest{A: a, B: b})
-			if err != nil {
-				log.Printf("Multiply error: %v\n", err)
+			mulResp := calculatorClient.Multiply(&proto.MultiplyRequest{A: a, B: b})
+			if mulResp == nil {
+				log.Printf("Multiply error: nil response\n")
 				continue
 			}
 			fmt.Printf("Client: %d * %d = %d\n", a, b, mulResp.Result)

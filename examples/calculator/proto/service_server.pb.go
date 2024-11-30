@@ -3,23 +3,16 @@ package proto
 
 import (
 	rpc "stream-rpc"
+	"context"
 )
 
 // UnimplementedCalculatorServer can be embedded to have forward compatible implementations
 type UnimplementedCalculatorServer struct{}
 
-func (s *UnimplementedCalculatorServer) Add(*AddRequest) (*AddResponse, error) {
-	return nil, rpc.ErrNotImplemented
-}
-
-func (s *UnimplementedCalculatorServer) Multiply(*MultiplyRequest) (*MultiplyResponse, error) {
-	return nil, rpc.ErrNotImplemented
-}
-
 type CalculatorServer interface {
-	Add(*AddRequest) (*AddResponse, error)
+	Add(context.Context, *AddRequest) *AddResponse
 
-	Multiply(*MultiplyRequest) (*MultiplyResponse, error)
+	Multiply(context.Context, *MultiplyRequest) *MultiplyResponse
 }
 
 type CalculatorServerImpl struct {
@@ -31,10 +24,18 @@ func RegisterCalculatorServer(peer *rpc.RpcPeer, impl CalculatorServer) {
 	peer.RegisterService("Calculator", server)
 }
 
-func (s *CalculatorServerImpl) Add(req *AddRequest) (*AddResponse, error) {
-	return s.impl.Add(req)
+func (s *UnimplementedCalculatorServer) Add(ctx context.Context, req *AddRequest) *AddResponse {
+	return nil
 }
 
-func (s *CalculatorServerImpl) Multiply(req *MultiplyRequest) (*MultiplyResponse, error) {
-	return s.impl.Multiply(req)
+func (s *UnimplementedCalculatorServer) Multiply(ctx context.Context, req *MultiplyRequest) *MultiplyResponse {
+	return nil
+}
+
+func (s *CalculatorServerImpl) Add(ctx context.Context, req *AddRequest) *AddResponse {
+	return s.impl.Add(ctx, req)
+}
+
+func (s *CalculatorServerImpl) Multiply(ctx context.Context, req *MultiplyRequest) *MultiplyResponse {
+	return s.impl.Multiply(ctx, req)
 }
