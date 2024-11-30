@@ -13,6 +13,8 @@ type CalculatorServer interface {
 	Add(context.Context, *AddRequest) *AddResponse
 
 	Multiply(context.Context, *MultiplyRequest) *MultiplyResponse
+
+	Divide(context.Context, *DivideRequest) *DivideResponse
 }
 
 type CalculatorServerImpl struct {
@@ -32,10 +34,18 @@ func (s *UnimplementedCalculatorServer) Multiply(ctx context.Context, req *Multi
 	return nil
 }
 
+func (s *UnimplementedCalculatorServer) Divide(ctx context.Context, req *DivideRequest) *DivideResponse {
+	return nil
+}
+
 func (s *CalculatorServerImpl) Add(ctx context.Context, req *AddRequest) *AddResponse {
 	return s.impl.Add(ctx, req)
 }
 
 func (s *CalculatorServerImpl) Multiply(ctx context.Context, req *MultiplyRequest) *MultiplyResponse {
 	return s.impl.Multiply(ctx, req)
+}
+
+func (s *CalculatorServerImpl) Divide(ctx context.Context, req *DivideRequest) *DivideResponse {
+	return s.impl.Divide(ctx, req)
 }

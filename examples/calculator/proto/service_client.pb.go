@@ -30,3 +30,12 @@ func (c *CalculatorClient) Multiply(req *MultiplyRequest) *MultiplyResponse {
 	}
 	return resp
 }
+
+func (c *CalculatorClient) Divide(req *DivideRequest) *DivideResponse {
+	resp := &DivideResponse{}
+	err := c.peer.Call("Calculator.Divide", req, resp)
+	if err != nil {
+		return nil
+	}
+	return resp
+}

@@ -1,11 +1,8 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"time"
 
@@ -13,6 +10,10 @@ import (
 	proto "github.com/jibuji/go-stream-rpc/examples/calculator/proto"
 	calculator "github.com/jibuji/go-stream-rpc/examples/calculator/proto/service"
 	stream "github.com/jibuji/go-stream-rpc/stream/libp2p"
+
+	"crypto/rand"
+	"encoding/hex"
+	"io/ioutil"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -23,20 +24,21 @@ import (
 const protocolID = "/calculator/1.0.0"
 
 func makeServerCalculation(peer *rpc.RpcPeer, a, b int32) {
+	calculatorClient := proto.NewCalculatorClient(peer)
 	// Test Add
 	addReq := &proto.AddRequest{A: a, B: b}
-	addResp := &proto.AddResponse{}
-	if err := peer.Call("Calculator.Add", addReq, addResp); err != nil {
-		log.Printf("Server Add error: %v\n", err)
+	addResp := calculatorClient.Add(addReq)
+	if addResp == nil {
+		log.Printf("Server Add error: nil response\n")
 		return
 	}
 	fmt.Printf("Server: %d + %d = %d\n", a, b, addResp.Result)
 
 	// Test Multiply
 	mulReq := &proto.MultiplyRequest{A: a, B: b}
-	mulResp := &proto.MultiplyResponse{}
-	if err := peer.Call("Calculator.Multiply", mulReq, mulResp); err != nil {
-		log.Printf("Server Multiply error: %v\n", err)
+	mulResp := calculatorClient.Multiply(mulReq)
+	if mulResp == nil {
+		log.Printf("Server Multiply error: nil response\n")
 		return
 	}
 	fmt.Printf("Server: %d * %d = %d\n", a, b, mulResp.Result)
@@ -52,8 +54,8 @@ func handleStream(s network.Stream) {
 	peer := rpc.NewRpcPeer(libp2pStream)
 	defer peer.Close()
 
-	// Register the calculator service
-	peer.RegisterService("Calculator", &calculator.CalculatorService{})
+	// Register the calculator service using the generated Register function
+	proto.RegisterCalculatorServer(peer, &calculator.CalculatorService{})
 	done := make(chan struct{})
 	// Handle stream closure
 	peer.OnStreamClose(func(err error) {

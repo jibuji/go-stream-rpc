@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 
@@ -75,15 +77,15 @@ func main() {
 				skeletonFileName := serviceDir + "/" + strings.ToLower(service.GoName) + ".go"
 				skeletonFile := gen.NewGeneratedFile(skeletonFileName, f.GoImportPath)
 
-				skeletonData := generator.TemplateData{
-					PackageName:  "service",
-					ProtoPackage: string(f.GoImportPath),
-					ServiceName:  service.GoName,
-					Methods:      methods,
+				existingMethods, err := generator.ParseExistingService(skeletonFileName)
+				if err != nil {
+					log.Printf("Warning: Could not parse existing service file: %v", err)
+					existingMethods = make(map[string]*generator.ExistingMethod)
 				}
 
-				if err := generator.GenerateSkeleton(skeletonFile, skeletonData); err != nil {
-					return err
+				err = generator.GenerateSkeleton(skeletonFile, data, existingMethods)
+				if err != nil {
+					return fmt.Errorf("failed to generate skeleton: %v", err)
 				}
 			}
 		}

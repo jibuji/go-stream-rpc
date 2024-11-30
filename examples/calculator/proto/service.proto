@@ -6,6 +6,7 @@ option go_package = "github.com/jibuji/go-stream-rpc/examples/calculator/proto";
 service Calculator {
   rpc Add(AddRequest) returns (AddResponse);
   rpc Multiply(MultiplyRequest) returns (MultiplyResponse);
+  rpc Divide(DivideRequest) returns (DivideResponse);
 }
 
 message AddRequest {
@@ -23,5 +24,14 @@ message MultiplyRequest {
 }
 
 message MultiplyResponse {
+  int32 result = 1;
+}
+
+message DivideRequest {
+  int32 a = 1;
+  int32 b = 2;
+}
+
+message DivideResponse {
   int32 result = 1;
 }

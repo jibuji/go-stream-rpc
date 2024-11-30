@@ -19,26 +19,6 @@ import (
 
 const protocolID = "/calculator/1.0.0"
 
-func makeCalculationRequest(peer *rpc.RpcPeer, a, b int32) {
-	// Test Add
-	addReq := &proto.AddRequest{A: a, B: b}
-	addResp := &proto.AddResponse{}
-	if err := peer.Call("Calculator.Add", addReq, addResp); err != nil {
-		log.Printf("Add error: %v\n", err)
-		return
-	}
-	fmt.Printf("Client: %d + %d = %d\n", a, b, addResp.Result)
-
-	// Test Multiply
-	mulReq := &proto.MultiplyRequest{A: a, B: b}
-	mulResp := &proto.MultiplyResponse{}
-	if err := peer.Call("Calculator.Multiply", mulReq, mulResp); err != nil {
-		log.Printf("Multiply error: %v\n", err)
-		return
-	}
-	fmt.Printf("Client: %d * %d = %d\n", a, b, mulResp.Result)
-}
-
 func main() {
 	targetPeer := flag.String("peer", "", "peer address in multiaddr format")
 	flag.Parse()
@@ -84,10 +64,14 @@ func main() {
 	peer := rpc.NewRpcPeer(libp2pStream)
 	defer peer.Close()
 
-	// Register calculator service to handle server requests
-	peer.RegisterService("Calculator", &calculator.CalculatorService{})
-	done := make(chan struct{})
+	// Register the calculator service using the generated Register function
+	// peer.RegisterService("Calculator", &calculator.CalculatorService{})
+	proto.RegisterCalculatorServer(peer, &calculator.CalculatorService{})
+	// Create calculator client
+	calculatorClient := proto.NewCalculatorClient(peer)
+
 	// Handle stream closure
+	done := make(chan struct{})
 	peer.OnStreamClose(func(err error) {
 		if err != nil {
 			log.Printf("Stream error: %v\n", err)
@@ -104,7 +88,22 @@ func main() {
 	for i := 0; ; i++ {
 		select {
 		case <-ticker.C:
-			makeCalculationRequest(peer, int32(i), int32(i+1))
+			a, b := int32(i), int32(i+1)
+
+			// Much simpler RPC calls
+			addResp := calculatorClient.Add(&proto.AddRequest{A: a, B: b})
+			if addResp == nil {
+				log.Printf("Add error: nil response\n")
+				continue
+			}
+			fmt.Printf("Client: %d + %d = %d\n", a, b, addResp.Result)
+
+			mulResp := calculatorClient.Multiply(&proto.MultiplyRequest{A: a, B: b})
+			if mulResp == nil {
+				log.Printf("Multiply error: nil response\n")
+				continue
+			}
+			fmt.Printf("Client: %d * %d = %d\n", a, b, mulResp.Result)
 		case <-done:
 			return
 		}

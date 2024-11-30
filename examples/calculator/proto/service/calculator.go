@@ -11,14 +11,15 @@ type CalculatorService struct {
 	proto.UnimplementedCalculatorServer
 }
 
-// Add implements CalculatorServer
 func (s *CalculatorService) Add(ctx context.Context, req *proto.AddRequest) *proto.AddResponse {
 	// TODO: Implement your logic here
-	return &proto.AddResponse{}
+	return &proto.AddResponse{Result: req.A + req.B}
 }
-
-// Multiply implements CalculatorServer
 func (s *CalculatorService) Multiply(ctx context.Context, req *proto.MultiplyRequest) *proto.MultiplyResponse {
 	// TODO: Implement your logic here
-	return &proto.MultiplyResponse{}
+	return &proto.MultiplyResponse{Result: req.A * req.B}
+}
+func (s *CalculatorService) Divide(ctx context.Context, req *proto.DivideRequest) *proto.DivideResponse {
+	// TODO: Implement your logic here
+	return &proto.DivideResponse{Result: req.A / req.B}
 }
