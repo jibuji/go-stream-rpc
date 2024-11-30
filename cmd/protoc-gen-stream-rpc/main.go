@@ -5,17 +5,24 @@ import (
 	"path/filepath"
 	"strings"
 
-	"stream-rpc/internal/generator"
+	"github.com/jibuji/go-stream-rpc/internal/generator"
 
 	"google.golang.org/protobuf/compiler/protogen"
 )
 
+// getServiceDir returns the path to the service directory that will contain
+// the generated service implementation skeleton
 func getServiceDir(baseDir string) string {
 	// Get the directory containing the proto file and add "service" sibling directory
 	dir := strings.TrimSuffix(baseDir, filepath.Base(baseDir))
 	return dir + "service"
 }
 
+// main is the entry point for the protoc-gen-stream-rpc plugin
+// It generates:
+// 1. Client code (_client.pb.go)
+// 2. Server interfaces (_server.pb.go)
+// 3. Service implementation skeletons in the service/ directory
 func main() {
 	var (
 		flags flag.FlagSet
@@ -45,7 +52,7 @@ func main() {
 				}
 
 				data := generator.TemplateData{
-					PackageName:  string(f.GoPackageName), // Use original package for client/server
+					PackageName:  string(f.GoPackageName),
 					ProtoPackage: string(f.GoImportPath),
 					ServiceName:  service.GoName,
 					Methods:      methods,
@@ -63,12 +70,11 @@ func main() {
 					return err
 				}
 
-				// Generate service skeleton in service directory
+				// Generate service skeleton
 				serviceDir := getServiceDir(f.GeneratedFilenamePrefix)
 				skeletonFileName := serviceDir + "/" + strings.ToLower(service.GoName) + ".go"
 				skeletonFile := gen.NewGeneratedFile(skeletonFileName, f.GoImportPath)
 
-				// Create new data with service package for skeleton
 				skeletonData := generator.TemplateData{
 					PackageName:  "service",
 					ProtoPackage: string(f.GoImportPath),

@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	rpc "stream-rpc"
-	proto "stream-rpc/examples/calculator/proto"
-	calculator "stream-rpc/examples/calculator/proto/service"
-	stream "stream-rpc/stream/libp2p"
 	"time"
+
+	rpc "github.com/jibuji/go-stream-rpc"
+	proto "github.com/jibuji/go-stream-rpc/examples/calculator/proto"
+	calculator "github.com/jibuji/go-stream-rpc/examples/calculator/proto/service"
+	stream "github.com/jibuji/go-stream-rpc/stream/libp2p"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"

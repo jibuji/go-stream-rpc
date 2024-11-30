@@ -11,7 +11,7 @@ var clientStubTemplate = template.Must(template.New("client").Parse(`
 package {{.PackageName}}
 
 import (
-	rpc "stream-rpc"
+	rpc "github.com/jibuji/go-stream-rpc"
 )
 
 type {{.ServiceName}}Client struct {
@@ -39,7 +39,7 @@ var serverStubTemplate = template.Must(template.New("server").Parse(`
 package {{.PackageName}}
 
 import (
-	rpc "stream-rpc"
+	rpc "github.com/jibuji/go-stream-rpc"
 	"context"
 )
 

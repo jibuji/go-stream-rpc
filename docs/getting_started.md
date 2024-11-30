@@ -7,8 +7,8 @@
 
 ## Installation
 ```bash
-go get github.com/jibuji/stream-rpc
-go install github.com/jibuji/stream-rpc/cmd/protoc-gen-stream-rpc
+go get github.com/jibuji/go-stream-rpc
+go install github.com/jibuji/go-stream-rpc/cmd/protoc-gen-stream-rpc
 ```
 
 ## Basic Usage

@@ -3,7 +3,7 @@ package service
 
 import (
 	"context"
-	proto "github.com/jibuji/stream-rpc/examples/calculator/proto"
+	proto "github.com/jibuji/go-stream-rpc/examples/calculator/proto"
 )
 
 // CalculatorService implements the Calculator service

@@ -2,7 +2,7 @@
 package proto
 
 import (
-	rpc "github.com/jibuji/stream-rpc"
+	rpc "github.com/jibuji/go-stream-rpc"
 )
 
 type CalculatorClient struct {

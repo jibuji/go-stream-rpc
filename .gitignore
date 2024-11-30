@@ -45,3 +45,5 @@ dist/
 
 # Generated files
 generated/
+*.key
+*.crt

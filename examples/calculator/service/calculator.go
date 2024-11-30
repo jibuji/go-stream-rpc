@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	proto "github.com/jibuji/stream-rpc/examples/calculator/proto"
+	proto "github.com/jibuji/go-stream-rpc/examples/calculator/proto"
 )
 
 type CalculatorService struct {

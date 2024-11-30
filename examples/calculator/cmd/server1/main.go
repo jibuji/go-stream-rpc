@@ -6,10 +6,10 @@ import (
 	"log"
 	"time"
 
-	rpc "github.com/jibuji/stream-rpc"
-	proto "github.com/jibuji/stream-rpc/examples/calculator/proto"
-	calculator "github.com/jibuji/stream-rpc/examples/calculator/proto/service"
-	stream "github.com/jibuji/stream-rpc/stream/libp2p"
+	rpc "github.com/jibuji/go-stream-rpc"
+	proto "github.com/jibuji/go-stream-rpc/examples/calculator/proto"
+	calculator "github.com/jibuji/go-stream-rpc/examples/calculator/proto/service"
+	stream "github.com/jibuji/go-stream-rpc/stream/libp2p"
 
 	"crypto/rand"
 	"encoding/hex"

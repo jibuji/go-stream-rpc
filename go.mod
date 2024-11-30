@@ -1,4 +1,4 @@
-module github.com/jibuji/stream-rpc
+module github.com/jibuji/go-stream-rpc
 
 go 1.22.5
 
