@@ -1,6 +1,8 @@
 package stream
 
-import "io"
+import (
+	"io"
+)
 
 // Stream represents a bidirectional communication channel
 type Stream interface {
