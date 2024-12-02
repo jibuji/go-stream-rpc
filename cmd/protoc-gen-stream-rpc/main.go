@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -75,17 +76,40 @@ func main() {
 				// Generate service skeleton
 				serviceDir := getServiceDir(f.GeneratedFilenamePrefix)
 				skeletonFileName := serviceDir + "/" + strings.ToLower(service.GoName) + ".go"
-				skeletonFile := gen.NewGeneratedFile(skeletonFileName, f.GoImportPath)
 
-				existingMethods, err := generator.ParseExistingService(skeletonFileName)
-				if err != nil {
-					log.Printf("Warning: Could not parse existing service file: %v", err)
-					existingMethods = make(map[string]*generator.ExistingMethod)
-				}
+				// Check if file already exists
+				if _, err := os.Stat(skeletonFileName); err == nil {
+					// File exists, parse it and only add missing methods
+					existingMethods, err := generator.ParseExistingService(skeletonFileName)
+					if err != nil {
+						log.Printf("Warning: Could not parse existing service file: %v", err)
+						continue // Skip generation if we can't parse existing file
+					}
 
-				err = generator.GenerateSkeleton(skeletonFile, data, existingMethods)
-				if err != nil {
-					return fmt.Errorf("failed to generate skeleton: %v", err)
+					// Read the entire file content
+					content, err := os.ReadFile(skeletonFileName)
+					if err != nil {
+						return fmt.Errorf("failed to read existing file: %v", err)
+					}
+
+					// Generate new content with appended methods
+					newContent, err := generator.AppendMissingMethods(string(content), data, existingMethods)
+					if err != nil {
+						return fmt.Errorf("failed to append methods: %v", err)
+					}
+
+					// Write back to the file if there were changes
+					if newContent != string(content) {
+						if err := os.WriteFile(skeletonFileName, []byte(newContent), 0644); err != nil {
+							return fmt.Errorf("failed to write updated file: %v", err)
+						}
+					}
+				} else if os.IsNotExist(err) {
+					// File doesn't exist, generate new skeleton
+					skeletonFile := gen.NewGeneratedFile(skeletonFileName, f.GoImportPath)
+					if err := generator.GenerateSkeleton(skeletonFile, data, nil); err != nil {
+						return fmt.Errorf("failed to generate skeleton: %v", err)
+					}
 				}
 			}
 		}

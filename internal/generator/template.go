@@ -103,7 +103,7 @@ var methodTemplate = template.Must(template.New("method").Parse(`func (s *{{$.Se
 }
 `))
 
-func GenerateSkeleton(w io.Writer, data TemplateData, existingMethods map[string]*ExistingMethod) error {
+func GenerateSkeleton(w io.Writer, data TemplateData, _ map[string]*ExistingMethod) error {
 	var buf bytes.Buffer
 
 	// Write header
@@ -124,24 +124,18 @@ type {{.ServiceName}}Service struct {
 		return err
 	}
 
-	// Write methods
+	// Write all methods for new file
 	for _, method := range data.Methods {
 		buf.WriteString("\n")
-		if existing, ok := existingMethods[method.Name]; ok && existing.SignatureMatches(method) {
-			// Keep existing implementation
-			buf.WriteString(existing.Body)
-		} else {
-			// Generate new method
-			methodData := struct {
-				ServiceName string
-				Method
-			}{
-				ServiceName: data.ServiceName,
-				Method:      method,
-			}
-			if err := methodTemplate.Execute(&buf, methodData); err != nil {
-				return err
-			}
+		methodData := struct {
+			ServiceName string
+			Method
+		}{
+			ServiceName: data.ServiceName,
+			Method:      method,
+		}
+		if err := methodTemplate.Execute(&buf, methodData); err != nil {
+			return err
 		}
 	}
 

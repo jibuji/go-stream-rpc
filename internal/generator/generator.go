@@ -43,3 +43,33 @@ func GenerateServer(w io.Writer, data TemplateData) error {
 	_, err := w.Write(buf.Bytes())
 	return err
 }
+
+// AppendMissingMethods appends only the methods that don't exist in the service file
+func AppendMissingMethods(existingContent string, data TemplateData, existingMethods map[string]*ExistingMethod) (string, error) {
+	var buf bytes.Buffer
+
+	// Write existing content without the last '}'
+	content := existingContent //strings.TrimRight(existingContent, "}\n ")
+	buf.WriteString(content)
+
+	// Add only missing methods
+	for _, method := range data.Methods {
+		if _, exists := existingMethods[method.Name]; !exists {
+			buf.WriteString("\n\n")
+			methodData := struct {
+				ServiceName string
+				Method
+			}{
+				ServiceName: data.ServiceName,
+				Method:      method,
+			}
+			if err := methodTemplate.Execute(&buf, methodData); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	// Close the struct
+	buf.WriteString("\n")
+	return buf.String(), nil
+}
