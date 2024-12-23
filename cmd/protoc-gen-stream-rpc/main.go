@@ -39,12 +39,17 @@ func main() {
 				continue
 			}
 
+			// Check for multiple services
+			if len(f.Services) > 1 {
+				return fmt.Errorf("multiple services in a single proto file are not supported: %s contains %d services", f.Desc.Path(), len(f.Services))
+			}
+
+			// Generate client code
+			clientFileName := strings.TrimSuffix(f.GeneratedFilenamePrefix, ".pb") + "_client.pb.go"
+			clientFile := gen.NewGeneratedFile(clientFileName, f.GoImportPath)
+
 			// For each service in the file
 			for _, service := range f.Services {
-				// Generate client code
-				clientFileName := strings.TrimSuffix(f.GeneratedFilenamePrefix, ".pb") + "_" + strings.ToLower(service.GoName) + "_client.pb.go"
-				clientFile := gen.NewGeneratedFile(clientFileName, f.GoImportPath)
-
 				methods := make([]generator.Method, 0)
 				for _, method := range service.Methods {
 					methods = append(methods, generator.Method{
@@ -67,7 +72,7 @@ func main() {
 				}
 
 				// Generate server code
-				serverFileName := strings.TrimSuffix(f.GeneratedFilenamePrefix, ".pb") + "_" + strings.ToLower(service.GoName) + "_server.pb.go"
+				serverFileName := strings.TrimSuffix(f.GeneratedFilenamePrefix, ".pb") + "_server.pb.go"
 				serverFile := gen.NewGeneratedFile(serverFileName, f.GoImportPath)
 				if err := generator.GenerateServer(serverFile, data); err != nil {
 					return err

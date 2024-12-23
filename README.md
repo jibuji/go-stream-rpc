@@ -12,6 +12,10 @@ A simple, efficient RPC framework for Go applications with Protocol Buffers supp
 - Automatic code generation
 - Easy-to-use API
 
+## Limitations
+- Each proto file must contain only one service definition
+- Services must be defined in separate proto files
+
 ## Installation
 
 ### Install the library and protoc plugin
@@ -21,6 +25,21 @@ go get github.com/jibuji/go-stream-rpc@latest
 
 # Install the protoc plugin
 go install github.com/jibuji/go-stream-rpc/cmd/protoc-gen-stream-rpc@latest
+```
+
+### Publishing New Versions
+To publish a new version:
+
+1. Tag your release:
+```bash
+git tag v1.0.0  # Use appropriate version number
+git push origin v1.0.0
+```
+
+2. Users can then install specific versions:
+```bash
+go get github.com/jibuji/go-stream-rpc@v1.0.0
+go install github.com/jibuji/go-stream-rpc/cmd/protoc-gen-stream-rpc@v1.0.0
 ```
 
 ### Requirements
@@ -65,14 +84,21 @@ message MultiplyResponse {
 ### 2. Generate code
 ```bash
 # Generate both protobuf and stream-rpc code
-protoc --go_out=. --stream-rpc_out=. calculator.proto
+protoc --go_out=. --go_opt=paths=source_relative \
+       --stream-rpc_out=. --stream-rpc_opt=paths=source_relative \
+       calculator.proto
 ```
 
-This will generate several files:
+This will generate several files for each service in your proto file:
 - `calculator.pb.go`: Protocol Buffers generated code
-- `calculator_client.pb.go`: RPC client code
-- `calculator_server.pb.go`: RPC server interfaces
-- `service/calculator.go`: Service implementation skeleton
+- `calculator_servicename_client.pb.go`: RPC client code for each service
+- `calculator_servicename_server.pb.go`: RPC server interfaces for each service
+- `service/servicename.go`: Service implementation skeleton for each service
+
+For example, if your proto file has two services named `Calculator` and `Stats`, you'll get:
+- `calculator_calculator_client.pb.go` and `calculator_stats_client.pb.go`
+- `calculator_calculator_server.pb.go` and `calculator_stats_server.pb.go`
+- `service/calculator.go` and `service/stats.go`
 
 ### 3. Implement the service
 The generator creates a service skeleton in `service/calculator.go`. Implement your service logic there:
