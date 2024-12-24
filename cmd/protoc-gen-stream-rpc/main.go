@@ -23,9 +23,9 @@ func getServiceDir(baseDir string) string {
 
 // main is the entry point for the protoc-gen-stream-rpc plugin
 // It generates:
-// 1. Client code (_client.pb.go)
-// 2. Server interfaces (_server.pb.go)
-// 3. Service implementation skeletons in the service/ directory
+// 1. Client code (_client.pb.go) - only for files with services
+// 2. Server interfaces (_server.pb.go) - only for files with services
+// 3. Service implementation skeletons in the service/ directory - only for files with services
 func main() {
 	var (
 		flags flag.FlagSet
@@ -36,6 +36,11 @@ func main() {
 	protogen.Options{ParamFunc: flags.Set}.Run(func(gen *protogen.Plugin) error {
 		for _, f := range gen.Files {
 			if !f.Generate {
+				continue
+			}
+
+			// If there are no services, skip file generation entirely
+			if len(f.Services) == 0 {
 				continue
 			}
 
