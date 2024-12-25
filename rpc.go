@@ -28,6 +28,30 @@ type Stream interface {
 
 type StreamCloseHandler func(error)
 
+type Session struct {
+	values sync.Map
+}
+
+func (s *Session) Get(key interface{}) interface{} {
+	value, _ := s.values.Load(key)
+	return value
+}
+
+func (s *Session) Set(key, value interface{}) {
+	s.values.Store(key, value)
+}
+
+type sessionKey int
+
+const SessionContextKey sessionKey = 0
+
+func From(ctx context.Context) *Session {
+	if session, ok := ctx.Value(SessionContextKey).(*Session); ok {
+		return session
+	}
+	return nil
+}
+
 type RpcPeer struct {
 	stream        Stream
 	services      map[string]interface{}
@@ -36,14 +60,24 @@ type RpcPeer struct {
 	writeMu       sync.Mutex
 	pendingCalls  map[uint32]chan []byte
 	onStreamClose StreamCloseHandler
+	ctx           context.Context
+	cancel        context.CancelFunc
+	session       *Session
 }
 
 func NewRpcPeer(stream Stream) *RpcPeer {
+	session := &Session{}
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx = context.WithValue(ctx, SessionContextKey, session)
+
 	peer := &RpcPeer{
 		stream:        stream,
 		services:      make(map[string]interface{}),
 		nextRequestID: 1,
 		pendingCalls:  make(map[uint32]chan []byte),
+		ctx:           ctx,
+		cancel:        cancel,
+		session:       session,
 	}
 	go peer.handleMessages()
 	return peer
@@ -300,9 +334,9 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 		return
 	}
 
-	// Call the method with context and request message
+	// Call the method with the context containing the session
 	results := method.Call([]reflect.Value{
-		reflect.ValueOf(context.Background()),
+		reflect.ValueOf(p.ctx),
 		reflect.ValueOf(requestMsg),
 	})
 
@@ -325,6 +359,11 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 func (p *RpcPeer) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Cancel the context
+	if p.cancel != nil {
+		p.cancel()
+	}
 
 	// Clear pending calls
 	for _, ch := range p.pendingCalls {
