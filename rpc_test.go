@@ -79,26 +79,157 @@ func (m *MockService) Add(ctx context.Context, req *MockRequest) (*MockResponse,
 	return &MockResponse{Result: req.Value + 1}, nil
 }
 
+// MockSession implements Session interface for testing
+type MockSession struct {
+	data map[interface{}]interface{}
+	mu   sync.RWMutex
+}
+
+func NewMockSession() *MockSession {
+	return &MockSession{
+		data: make(map[interface{}]interface{}),
+	}
+}
+
+func (s *MockSession) Get(key interface{}) interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data[key]
+}
+
+func (s *MockSession) Set(key, value interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[key] = value
+}
+
 // Tests
 func TestRpcPeer_NewRpcPeer(t *testing.T) {
-	stream := NewMockStream()
-	peer := NewRpcPeer(stream)
+	t.Run("with default session", func(t *testing.T) {
+		stream := NewMockStream()
+		peer := NewRpcPeer(stream)
 
-	if peer == nil {
-		t.Fatal("NewRpcPeer returned nil")
+		if peer == nil {
+			t.Fatal("NewRpcPeer returned nil")
+		}
+
+		if peer.stream != stream {
+			t.Error("Stream not properly set")
+		}
+
+		if peer.services == nil {
+			t.Error("Services map not initialized")
+		}
+
+		if peer.pendingCalls == nil {
+			t.Error("PendingCalls map not initialized")
+		}
+
+		// Test default session
+		session := From(peer.ctx)
+		if session == nil {
+			t.Error("Default session not created")
+		}
+
+		// Test session functionality
+		session.Set("test", "value")
+		if val := session.Get("test"); val != "value" {
+			t.Errorf("Session Get/Set not working, got %v, want %v", val, "value")
+		}
+	})
+
+	t.Run("with custom session", func(t *testing.T) {
+		stream := NewMockStream()
+		mockSession := NewMockSession()
+		mockSession.Set("preexisting", "data")
+
+		peer := NewRpcPeer(stream, WithSession(mockSession))
+
+		// Verify the custom session was used
+		session := From(peer.ctx)
+		if session != mockSession {
+			t.Error("Custom session not properly set")
+		}
+
+		// Test preexisting data
+		if val := session.Get("preexisting"); val != "data" {
+			t.Errorf("Custom session data not preserved, got %v, want %v", val, "data")
+		}
+	})
+}
+
+func TestCreateDefaultSessionContext(t *testing.T) {
+	ctx := CreateDefaultSessionContext()
+
+	session := From(ctx)
+	if session == nil {
+		t.Fatal("CreateDefaultSessionContext did not create a session")
 	}
 
-	if peer.stream != stream {
-		t.Error("Stream not properly set")
+	// Test session is a MemSession
+	if _, ok := session.(*MemSession); !ok {
+		t.Error("Created session is not a MemSession")
 	}
 
-	if peer.services == nil {
-		t.Error("Services map not initialized")
+	// Test session functionality
+	session.Set("key", "value")
+	if val := session.Get("key"); val != "value" {
+		t.Errorf("Session Get/Set not working, got %v, want %v", val, "value")
+	}
+}
+
+func TestMemSession(t *testing.T) {
+	session := NewMemSession()
+
+	// Test basic Get/Set
+	session.Set("string", "value")
+	if val := session.Get("string"); val != "value" {
+		t.Errorf("String value mismatch, got %v, want %v", val, "value")
 	}
 
-	if peer.pendingCalls == nil {
-		t.Error("PendingCalls map not initialized")
+	// Test with different types
+	session.Set("int", 42)
+	if val := session.Get("int"); val != 42 {
+		t.Errorf("Int value mismatch, got %v, want %v", val, 42)
 	}
+
+	// Test non-existent key
+	if val := session.Get("nonexistent"); val != nil {
+		t.Errorf("Non-existent key should return nil, got %v", val)
+	}
+
+	// Test overwriting value
+	session.Set("key", "value1")
+	session.Set("key", "value2")
+	if val := session.Get("key"); val != "value2" {
+		t.Errorf("Overwritten value mismatch, got %v, want %v", val, "value2")
+	}
+}
+
+func TestFrom(t *testing.T) {
+	t.Run("with valid session", func(t *testing.T) {
+		session := NewMemSession()
+		ctx := context.WithValue(context.Background(), SessionContextKey, session)
+
+		retrieved := From(ctx)
+		if retrieved != session {
+			t.Error("From did not return the correct session")
+		}
+	})
+
+	t.Run("with no session", func(t *testing.T) {
+		ctx := context.Background()
+		if session := From(ctx); session != nil {
+			t.Error("From should return nil when no session is present")
+		}
+	})
+
+	t.Run("with invalid session type", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), SessionContextKey, "not a session")
+		if session := From(ctx); session != nil {
+			t.Error("From should return nil when context value is not a Session")
+		}
+	})
 }
 
 func TestRpcPeer_RegisterService(t *testing.T) {

@@ -28,16 +28,25 @@ type Stream interface {
 
 type StreamCloseHandler func(error)
 
-type Session struct {
+type Session interface {
+	Get(key interface{}) interface{}
+	Set(key, value interface{})
+}
+
+type MemSession struct {
 	values sync.Map
 }
 
-func (s *Session) Get(key interface{}) interface{} {
+func NewMemSession() *MemSession {
+	return &MemSession{}
+}
+
+func (s *MemSession) Get(key interface{}) interface{} {
 	value, _ := s.values.Load(key)
 	return value
 }
 
-func (s *Session) Set(key, value interface{}) {
+func (s *MemSession) Set(key, value interface{}) {
 	s.values.Store(key, value)
 }
 
@@ -45,11 +54,16 @@ type sessionKey int
 
 const SessionContextKey sessionKey = 0
 
-func From(ctx context.Context) *Session {
-	if session, ok := ctx.Value(SessionContextKey).(*Session); ok {
+func From(ctx context.Context) Session {
+	if session, ok := ctx.Value(SessionContextKey).(Session); ok {
 		return session
 	}
 	return nil
+}
+
+func CreateDefaultSessionContext() context.Context {
+	session := NewMemSession()
+	return context.WithValue(context.Background(), SessionContextKey, session)
 }
 
 type RpcPeer struct {
@@ -62,13 +76,18 @@ type RpcPeer struct {
 	onStreamClose StreamCloseHandler
 	ctx           context.Context
 	cancel        context.CancelFunc
-	session       *Session
 }
 
-func NewRpcPeer(stream Stream) *RpcPeer {
-	session := &Session{}
-	ctx, cancel := context.WithCancel(context.Background())
-	ctx = context.WithValue(ctx, SessionContextKey, session)
+type RpcPeerOption func(*RpcPeer)
+
+func WithSession(session Session) RpcPeerOption {
+	return func(p *RpcPeer) {
+		p.ctx = context.WithValue(context.Background(), SessionContextKey, session)
+	}
+}
+
+func NewRpcPeer(stream Stream, opts ...RpcPeerOption) *RpcPeer {
+	ctx, cancel := context.WithCancel(CreateDefaultSessionContext())
 
 	peer := &RpcPeer{
 		stream:        stream,
@@ -77,8 +96,13 @@ func NewRpcPeer(stream Stream) *RpcPeer {
 		pendingCalls:  make(map[uint32]chan []byte),
 		ctx:           ctx,
 		cancel:        cancel,
-		session:       session,
 	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(peer)
+	}
+
 	go peer.handleMessages()
 	return peer
 }
