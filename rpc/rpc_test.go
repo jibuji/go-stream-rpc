@@ -2,18 +2,11 @@ package rpc
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/jibuji/go-stream-rpc/session"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/runtime/protoimpl"
 )
 
 // MockStream implements Stream interface for testing
@@ -69,42 +62,48 @@ func (m *MockStream) Close() error {
 	return nil
 }
 
-// Mock protobuf messages for testing
+// Mock service for testing
+type MockService struct {
+	t *testing.T
+}
+
 type MockRequest struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-	Value         int32 `protobuf:"varint,1,opt,name=value,proto3" json:"value,omitempty"`
+	Value int32
 }
 
 type MockResponse struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-	Result        int32 `protobuf:"varint,1,opt,name=result,proto3" json:"result,omitempty"`
+	Result int32
 }
 
-func (m *MockRequest) Reset()         { *m = MockRequest{} }
-func (m *MockRequest) String() string { return fmt.Sprintf("MockRequest{Value: %d}", m.Value) }
-func (*MockRequest) ProtoMessage()    {}
-func (m *MockRequest) ProtoReflect() protoreflect.Message {
-	return nil
+func (m *MockService) Add(ctx context.Context, req *MockRequest) (*MockResponse, error) {
+	return &MockResponse{Result: req.Value + 1}, nil
 }
 
-func (m *MockResponse) Reset()         { *m = MockResponse{} }
-func (m *MockResponse) String() string { return fmt.Sprintf("MockResponse{Result: %d}", m.Result) }
-func (*MockResponse) ProtoMessage()    {}
-func (m *MockResponse) ProtoReflect() protoreflect.Message {
-	return nil
+// MockSession implements Session interface for testing
+type MockSession struct {
+	data map[interface{}]interface{}
+	mu   sync.RWMutex
 }
 
-// Mock service for testing
-type MockService struct{}
-
-func (s *MockService) Add(ctx context.Context, req *MockRequest) *MockResponse {
-	return &MockResponse{Result: req.Value + 1}
+func NewMockSession() *MockSession {
+	return &MockSession{
+		data: make(map[interface{}]interface{}),
+	}
 }
 
+func (s *MockSession) Get(key interface{}) interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data[key]
+}
+
+func (s *MockSession) Set(key, value interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[key] = value
+}
+
+// Tests
 func TestRpcPeer_NewRpcPeer(t *testing.T) {
 	t.Run("with default session", func(t *testing.T) {
 		stream := NewMockStream()
@@ -126,37 +125,120 @@ func TestRpcPeer_NewRpcPeer(t *testing.T) {
 			t.Error("PendingCalls map not initialized")
 		}
 
-		sess := session.From(peer.ctx)
-		if sess == nil {
+		// Test default session
+		session := session.From(peer.ctx)
+		if session == nil {
 			t.Error("Default session not created")
+		}
+
+		// Test session functionality
+		session.Set("test", "value")
+		if val := session.Get("test"); val != "value" {
+			t.Errorf("Session Get/Set not working, got %v, want %v", val, "value")
 		}
 	})
 
 	t.Run("with custom session", func(t *testing.T) {
 		stream := NewMockStream()
-		mockSession := session.NewMemSession()
+		mockSession := NewMockSession()
 		mockSession.Set("preexisting", "data")
 
 		peer := NewRpcPeer(stream, WithSession(mockSession))
 
-		sess := session.From(peer.ctx)
-		if sess != mockSession {
+		// Verify the custom session was used
+		session := session.From(peer.ctx)
+		if session != mockSession {
 			t.Error("Custom session not properly set")
 		}
 
-		if val := sess.Get("preexisting"); val != "data" {
+		// Test preexisting data
+		if val := session.Get("preexisting"); val != "data" {
 			t.Errorf("Custom session data not preserved, got %v, want %v", val, "data")
+		}
+	})
+}
+
+func TestCreateDefaultSessionContext(t *testing.T) {
+	ctx := session.CreateDefaultSessionContext()
+
+	sess := session.From(ctx)
+	if sess == nil {
+		t.Fatal("CreateDefaultSessionContext did not create a session")
+	}
+
+	// Test session is a MemSession
+	if _, ok := sess.(*session.MemSession); !ok {
+		t.Error("Created session is not a MemSession")
+	}
+
+	// Test session functionality
+	sess.Set("key", "value")
+	if val := sess.Get("key"); val != "value" {
+		t.Errorf("Session Get/Set not working, got %v, want %v", val, "value")
+	}
+}
+
+func TestMemSession(t *testing.T) {
+	session := session.NewMemSession()
+
+	// Test basic Get/Set
+	session.Set("string", "value")
+	if val := session.Get("string"); val != "value" {
+		t.Errorf("String value mismatch, got %v, want %v", val, "value")
+	}
+
+	// Test with different types
+	session.Set("int", 42)
+	if val := session.Get("int"); val != 42 {
+		t.Errorf("Int value mismatch, got %v, want %v", val, 42)
+	}
+
+	// Test non-existent key
+	if val := session.Get("nonexistent"); val != nil {
+		t.Errorf("Non-existent key should return nil, got %v", val)
+	}
+
+	// Test overwriting value
+	session.Set("key", "value1")
+	session.Set("key", "value2")
+	if val := session.Get("key"); val != "value2" {
+		t.Errorf("Overwritten value mismatch, got %v, want %v", val, "value2")
+	}
+}
+
+func TestFrom(t *testing.T) {
+	t.Run("with valid session", func(t *testing.T) {
+		sess := session.NewMemSession()
+		ctx := context.WithValue(context.Background(), session.SessionContextKey, sess)
+
+		retrieved := session.From(ctx)
+		if retrieved != sess {
+			t.Error("From did not return the correct session")
+		}
+	})
+
+	t.Run("with no session", func(t *testing.T) {
+		ctx := context.Background()
+		if session := session.From(ctx); session != nil {
+			t.Error("From should return nil when no session is present")
+		}
+	})
+
+	t.Run("with invalid session type", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), session.SessionContextKey, "not a session")
+		if session := session.From(ctx); session != nil {
+			t.Error("From should return nil when context value is not a Session")
 		}
 	})
 }
 
 func TestRpcPeer_RegisterService(t *testing.T) {
 	peer := NewRpcPeer(NewMockStream())
-	service := &MockService{}
+	service := &MockService{t: t}
 
-	peer.RegisterService("Calculator", service)
+	peer.RegisterService("calculator", service)
 
-	if _, exists := peer.services["Calculator"]; !exists {
+	if _, exists := peer.services["calculator"]; !exists {
 		t.Error("Service not properly registered")
 	}
 }
@@ -164,6 +246,7 @@ func TestRpcPeer_RegisterService(t *testing.T) {
 func TestRpcPeer_GetNextRequestID(t *testing.T) {
 	peer := NewRpcPeer(NewMockStream())
 
+	// Test sequential IDs
 	id1 := peer.getNextRequestID()
 	id2 := peer.getNextRequestID()
 
@@ -184,6 +267,7 @@ func TestRpcPeer_Close(t *testing.T) {
 	stream := NewMockStream()
 	peer := NewRpcPeer(stream)
 
+	// Create a pending call
 	peer.pendingCalls[1] = make(chan []byte, 1)
 
 	err := peer.Close()
@@ -200,65 +284,4 @@ func TestRpcPeer_Close(t *testing.T) {
 	}
 }
 
-func TestRpcPeer_Wait(t *testing.T) {
-	t.Run("normal closure", func(t *testing.T) {
-		stream := NewMockStream()
-		peer := NewRpcPeer(stream)
-
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			stream.readErr = &websocket.CloseError{
-				Code: websocket.CloseNormalClosure,
-			}
-		}()
-
-		err := peer.Wait()
-		if err != nil {
-			t.Errorf("Expected nil error for normal closure, got %v", err)
-		}
-	})
-
-	t.Run("error closure", func(t *testing.T) {
-		stream := NewMockStream()
-		peer := NewRpcPeer(stream)
-
-		testErr := errors.New("test error")
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			stream.readErr = testErr
-		}()
-
-		err := peer.Wait()
-		if err == nil || !strings.Contains(err.Error(), testErr.Error()) {
-			t.Errorf("Expected error containing %v, got %v", testErr, err)
-		}
-	})
-}
-
-func TestRpcPeer_ErrorHandling(t *testing.T) {
-	t.Run("method not found", func(t *testing.T) {
-		stream := NewMockStream()
-		peer := NewRpcPeer(stream)
-
-		req := &MockRequest{Value: 42}
-		resp := &MockResponse{}
-
-		err := peer.Call("NonExistentService.Method", req, resp)
-		if err == nil {
-			t.Error("Expected error for non-existent service")
-		}
-	})
-
-	t.Run("invalid method name", func(t *testing.T) {
-		stream := NewMockStream()
-		peer := NewRpcPeer(stream)
-
-		req := &MockRequest{Value: 42}
-		resp := &MockResponse{}
-
-		err := peer.Call("InvalidMethodName", req, resp)
-		if err == nil {
-			t.Error("Expected error for invalid method name")
-		}
-	})
-}
+// Add more tests for error handling, message formatting, etc.

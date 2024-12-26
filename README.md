@@ -146,11 +146,11 @@ func handleStream(s network.Stream) {
 
     peer.RegisterService("Calculator", &calculator.CalculatorService{})
     
-    peer.OnStreamClose(func(err error) {
-        if err != nil {
-            log.Printf("Stream error: %v\n", err)
-        }
-    })
+    errChan := peer.ErrorChannel()
+    select {
+    case err := <-errChan:
+        log.Fatal(err)
+    }
 }
 
 func main() {
