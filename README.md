@@ -134,7 +134,7 @@ package main
 
 import (
     "log"
-    rpc "github.com/jibuji/go-stream-rpc"
+    rpc "github.com/jibuji/go-stream-rpc/rpc"
     "github.com/jibuji/go-stream-rpc/stream/libp2p"
     "github.com/libp2p/go-libp2p"
 )
@@ -173,7 +173,7 @@ package main
 import (
     "context"
     "log"
-    rpc "github.com/jibuji/go-stream-rpc"
+    rpc "github.com/jibuji/go-stream-rpc/rpc"
     "github.com/jibuji/go-stream-rpc/stream/libp2p"
     "github.com/libp2p/go-libp2p"
 )
@@ -207,6 +207,7 @@ func main() {
 - [Architecture Overview](docs/architecture.md)
 - [Getting Started Guide](docs/getting_started.md)
 - [Wire Protocol Specification](docs/wire_protocol.md)
+- [Development Log](devlog.md)
 
 ## Examples
 Check out the [examples](examples/) directory for complete working examples.

@@ -6,9 +6,10 @@ import (
 	"log"
 	"time"
 
-	rpc "github.com/jibuji/go-stream-rpc"
 	proto "github.com/jibuji/go-stream-rpc/examples/calculator/proto"
 	calculator "github.com/jibuji/go-stream-rpc/examples/calculator/proto/service"
+	"github.com/jibuji/go-stream-rpc/rpc"
+	"github.com/jibuji/go-stream-rpc/session"
 	stream "github.com/jibuji/go-stream-rpc/stream/libp2p"
 
 	"crypto/rand"
@@ -47,25 +48,17 @@ func makeServerCalculation(peer *rpc.RpcPeer, a, b int32) {
 func handleStream(s network.Stream) {
 	log.Printf("New connection from: %s\n", s.Conn().RemotePeer())
 
-	// Create the libp2p stream wrapper
 	libp2pStream := stream.NewLibP2PStream(s)
 
-	// Create a new RPC peer
-	peer := rpc.NewRpcPeer(libp2pStream)
+	// Create custom session if needed
+	customSession := session.NewMemSession()
+
+	// Create a new RPC peer with custom session
+	peer := rpc.NewRpcPeer(libp2pStream, rpc.WithSession(customSession))
 	defer peer.Close()
 
-	// Register the calculator service using the generated Register function
+	// Register the calculator service
 	proto.RegisterCalculatorServer(peer, &calculator.CalculatorService{})
-	done := make(chan struct{})
-	// Handle stream closure
-	peer.OnStreamClose(func(err error) {
-		if err != nil {
-			log.Printf("Stream error: %v\n", err)
-		} else {
-			log.Println("Stream closed normally")
-		}
-		close(done)
-	})
 
 	// Start periodic calculations
 	ticker := time.NewTicker(10 * time.Second)
@@ -74,7 +67,8 @@ func handleStream(s network.Stream) {
 	counter := int32(100)
 	for {
 		select {
-		case <-done:
+		case err := <-peer.ErrorChannel():
+			log.Printf("encounter error: %v\n", err)
 			return
 		case <-ticker.C:
 			makeServerCalculation(peer, counter, counter+5)

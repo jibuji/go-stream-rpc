@@ -1,4 +1,4 @@
-package streamrpc
+package rpc
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jibuji/go-stream-rpc/session"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -24,46 +25,7 @@ const (
 type Stream interface {
 	io.Reader
 	io.Writer
-}
-
-type StreamCloseHandler func(error)
-
-type Session interface {
-	Get(key interface{}) interface{}
-	Set(key, value interface{})
-}
-
-type MemSession struct {
-	values sync.Map
-}
-
-func NewMemSession() *MemSession {
-	return &MemSession{}
-}
-
-func (s *MemSession) Get(key interface{}) interface{} {
-	value, _ := s.values.Load(key)
-	return value
-}
-
-func (s *MemSession) Set(key, value interface{}) {
-	s.values.Store(key, value)
-}
-
-type sessionKey int
-
-const SessionContextKey sessionKey = 0
-
-func From(ctx context.Context) Session {
-	if session, ok := ctx.Value(SessionContextKey).(Session); ok {
-		return session
-	}
-	return nil
-}
-
-func CreateDefaultSessionContext() context.Context {
-	session := NewMemSession()
-	return context.WithValue(context.Background(), SessionContextKey, session)
+	io.Closer
 }
 
 type RpcPeer struct {
@@ -73,21 +35,21 @@ type RpcPeer struct {
 	mu            sync.Mutex
 	writeMu       sync.Mutex
 	pendingCalls  map[uint32]chan []byte
-	onStreamClose StreamCloseHandler
 	ctx           context.Context
 	cancel        context.CancelFunc
+	errChan       chan error
 }
 
 type RpcPeerOption func(*RpcPeer)
 
-func WithSession(session Session) RpcPeerOption {
+func WithSession(s session.Session) RpcPeerOption {
 	return func(p *RpcPeer) {
-		p.ctx = context.WithValue(context.Background(), SessionContextKey, session)
+		p.ctx = context.WithValue(context.Background(), session.SessionContextKey, s)
 	}
 }
 
 func NewRpcPeer(stream Stream, opts ...RpcPeerOption) *RpcPeer {
-	ctx, cancel := context.WithCancel(CreateDefaultSessionContext())
+	ctx, cancel := context.WithCancel(session.CreateDefaultSessionContext())
 
 	peer := &RpcPeer{
 		stream:        stream,
@@ -96,6 +58,7 @@ func NewRpcPeer(stream Stream, opts ...RpcPeerOption) *RpcPeer {
 		pendingCalls:  make(map[uint32]chan []byte),
 		ctx:           ctx,
 		cancel:        cancel,
+		errChan:       make(chan error, 1),
 	}
 
 	// Apply options
@@ -179,39 +142,41 @@ func (p *RpcPeer) Call(methodName string, request proto.Message, response proto.
 }
 
 func (p *RpcPeer) handleMessages() {
-	for {
-		_, requestID, methodName, payload, err := p.readMessage()
-		if err != nil {
-			p.mu.Lock()
-			handler := p.onStreamClose
-			p.mu.Unlock()
+	defer close(p.errChan)
 
-			if handler != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure,
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		default:
+			_, requestID, methodName, payload, err := p.readMessage()
+			if err != nil {
+				if websocket.IsCloseError(err,
+					websocket.CloseNormalClosure,
 					websocket.CloseGoingAway,
 					websocket.CloseAbnormalClosure,
 					websocket.CloseNoStatusReceived) {
-					// normal closure
-					handler(nil)
+					p.errChan <- nil // Normal closure
 				} else {
-					handler(err) // Error case
+					p.errChan <- fmt.Errorf("stream error: %w", err)
 				}
+				p.cancel() // Cancel context to signal shutdown
+				return
 			}
-			return
-		}
 
-		isResponse := (requestID & RequestIDMSB) != 0
-		if isResponse {
-			originalRequestID := requestID & RequestIDMask
-			p.mu.Lock()
-			responseChan, ok := p.pendingCalls[originalRequestID]
-			p.mu.Unlock()
+			isResponse := (requestID & RequestIDMSB) != 0
+			if isResponse {
+				originalRequestID := requestID & RequestIDMask
+				p.mu.Lock()
+				responseChan, ok := p.pendingCalls[originalRequestID]
+				p.mu.Unlock()
 
-			if ok {
-				responseChan <- payload
+				if ok {
+					responseChan <- payload
+				}
+			} else {
+				go p.handleRequest(requestID, methodName, payload)
 			}
-		} else {
-			go p.handleRequest(requestID, methodName, payload)
 		}
 	}
 }
@@ -337,7 +302,6 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	serviceValue := reflect.ValueOf(service)
 	method := serviceValue.MethodByName(methodName)
 	if !method.IsValid() {
-		fmt.Printf("Method not found: %s.%s\n", serviceName, methodName)
 		p.writeErrorResponse(requestID, ErrorCodeMethodNotFound, fmt.Sprintf("method %s not found", methodName))
 		return
 	}
@@ -353,7 +317,6 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	requestMsgType := methodType.In(1).Elem()
 	requestMsg := reflect.New(requestMsgType).Interface().(proto.Message)
 	if err := proto.Unmarshal(payload, requestMsg); err != nil {
-		fmt.Printf("Unmarshal error: %v\n", err)
 		p.writeErrorResponse(requestID, ErrorCodeInternalError, fmt.Sprintf("failed to unmarshal request: %v", err))
 		return
 	}
@@ -365,7 +328,7 @@ func (p *RpcPeer) handleRequest(requestID uint32, methodName string, payload []b
 	})
 
 	if len(results) != 1 {
-		p.writeErrorResponse(requestID, ErrorCodeInternalError, "invalid method return values, should be only one return value")
+		p.writeErrorResponse(requestID, ErrorCodeInternalError, "invalid method return values")
 		return
 	}
 
@@ -384,28 +347,25 @@ func (p *RpcPeer) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Cancel the context
 	if p.cancel != nil {
 		p.cancel()
 	}
 
-	// Clear pending calls
 	for _, ch := range p.pendingCalls {
 		close(ch)
 	}
 	p.pendingCalls = make(map[uint32]chan []byte)
 
-	// Close stream if it implements io.Closer
-	if closer, ok := p.stream.(io.Closer); ok {
-		return closer.Close()
-	}
-	return nil
+	return p.stream.Close()
 }
 
-func (p *RpcPeer) OnStreamClose(handler StreamCloseHandler) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.onStreamClose = handler
+func (p *RpcPeer) Wait() error {
+	return <-p.errChan
+}
+
+// ErrorChannel returns a read-only channel for error notifications.
+func (p *RpcPeer) ErrorChannel() <-chan error {
+	return p.errChan
 }
 
 var ErrNotImplemented = errors.New("method not implemented")
@@ -436,31 +396,22 @@ func (p *RpcPeer) writeErrorResponse(requestID uint32, code ErrorCode, message s
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
 
-	// Convert message to bytes
 	messageBytes := []byte(message)
-
-	// Total length = 4 (errorCode) + len(message)
 	totalLength := uint32(4 + len(messageBytes))
-
-	// Set MSB for response and second MSB for error
 	responseID := (requestID & RequestIDMask) | RequestIDMSB | uint32(0x40000000)
 
-	// Write total length
 	if err := binary.Write(p.stream, binary.BigEndian, totalLength); err != nil {
 		return err
 	}
 
-	// Write response ID
 	if err := binary.Write(p.stream, binary.BigEndian, responseID); err != nil {
 		return err
 	}
 
-	// Write error code
 	if err := binary.Write(p.stream, binary.BigEndian, uint32(code)); err != nil {
 		return err
 	}
 
-	// Write error message
 	_, err := p.stream.Write(messageBytes)
 	return err
 }
@@ -470,10 +421,7 @@ func (p *RpcPeer) readErrorResponse(payload []byte) (*RPCError, error) {
 		return nil, fmt.Errorf("error payload too short")
 	}
 
-	// Read error code
 	errorCode := ErrorCode(binary.BigEndian.Uint32(payload[:4]))
-
-	// Read error message
 	message := string(payload[4:])
 
 	return &RPCError{

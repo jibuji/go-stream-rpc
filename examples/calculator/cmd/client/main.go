@@ -7,9 +7,9 @@ import (
 	"log"
 	"time"
 
-	rpc "github.com/jibuji/go-stream-rpc"
 	proto "github.com/jibuji/go-stream-rpc/examples/calculator/proto"
 	calculator "github.com/jibuji/go-stream-rpc/examples/calculator/proto/service"
+	rpc "github.com/jibuji/go-stream-rpc/rpc"
 	stream "github.com/jibuji/go-stream-rpc/stream/libp2p"
 
 	"github.com/libp2p/go-libp2p"
@@ -71,15 +71,7 @@ func main() {
 	calculatorClient := proto.NewCalculatorClient(peer)
 
 	// Handle stream closure
-	done := make(chan struct{})
-	peer.OnStreamClose(func(err error) {
-		if err != nil {
-			log.Printf("Stream error: %v\n", err)
-		} else {
-			log.Println("Stream closed normally")
-		}
-		close(done)
-	})
+	errChan := peer.ErrorChannel()
 
 	// Make periodic RPC calls
 	ticker := time.NewTicker(5 * time.Second)
@@ -104,7 +96,8 @@ func main() {
 				continue
 			}
 			fmt.Printf("Client: %d * %d = %d\n", a, b, mulResp.Result)
-		case <-done:
+		case err := <-errChan:
+			log.Printf("encounter error: %v\n", err)
 			return
 		}
 	}
