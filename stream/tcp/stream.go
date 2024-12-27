@@ -3,21 +3,21 @@ package tcp
 import "net"
 
 type TCPStream struct {
-	conn net.Conn
+	Conn net.Conn
 }
 
 func NewTCPStream(conn net.Conn) *TCPStream {
-	return &TCPStream{conn: conn}
+	return &TCPStream{Conn: conn}
 }
 
 func (s *TCPStream) Read(p []byte) (n int, err error) {
-	return s.conn.Read(p)
+	return s.Conn.Read(p)
 }
 
 func (s *TCPStream) Write(p []byte) (n int, err error) {
-	return s.conn.Write(p)
+	return s.Conn.Write(p)
 }
 
 func (s *TCPStream) Close() error {
-	return s.conn.Close()
+	return s.Conn.Close()
 }

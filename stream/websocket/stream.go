@@ -7,14 +7,14 @@ import (
 )
 
 type WebSocketStream struct {
-	conn         *websocket.Conn
+	Conn         *websocket.Conn
 	readBuffer   []byte // Buffer for remaining data
 	readDeadline time.Duration
 }
 
 func NewWebSocketStream(conn *websocket.Conn) *WebSocketStream {
 	return &WebSocketStream{
-		conn:         conn,
+		Conn:         conn,
 		readDeadline: 30 * time.Second, // Default timeout
 	}
 }
@@ -27,7 +27,7 @@ func (s *WebSocketStream) Read(p []byte) (n int, err error) {
 		return n, nil
 	}
 
-	_, message, err := s.conn.ReadMessage()
+	_, message, err := s.Conn.ReadMessage()
 	if err != nil {
 		return 0, err
 	}
@@ -45,7 +45,7 @@ func (s *WebSocketStream) Read(p []byte) (n int, err error) {
 }
 
 func (s *WebSocketStream) Write(p []byte) (n int, err error) {
-	err = s.conn.WriteMessage(websocket.BinaryMessage, p)
+	err = s.Conn.WriteMessage(websocket.BinaryMessage, p)
 	if err != nil {
 		return 0, err
 	}
@@ -53,7 +53,7 @@ func (s *WebSocketStream) Write(p []byte) (n int, err error) {
 }
 
 func (s *WebSocketStream) Close() error {
-	return s.conn.Close()
+	return s.Conn.Close()
 }
 
 // Optional: Add method to configure read deadline

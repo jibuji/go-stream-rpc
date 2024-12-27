@@ -5,21 +5,21 @@ import (
 )
 
 type LibP2PStream struct {
-	stream network.Stream
+	Stream network.Stream
 }
 
 func NewLibP2PStream(stream network.Stream) *LibP2PStream {
 	return &LibP2PStream{
-		stream: stream,
+		Stream: stream,
 	}
 }
 
 func (s *LibP2PStream) Read(p []byte) (n int, err error) {
-	return s.stream.Read(p)
+	return s.Stream.Read(p)
 }
 
 func (s *LibP2PStream) Write(p []byte) (n int, err error) {
-	n, err = s.stream.Write(p)
+	n, err = s.Stream.Write(p)
 	if err != nil {
 		return n, err
 	}
@@ -27,5 +27,5 @@ func (s *LibP2PStream) Write(p []byte) (n int, err error) {
 }
 
 func (s *LibP2PStream) Close() error {
-	return s.stream.Close()
+	return s.Stream.Close()
 }

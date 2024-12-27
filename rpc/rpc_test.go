@@ -113,7 +113,7 @@ func TestRpcPeer_NewRpcPeer(t *testing.T) {
 			t.Fatal("NewRpcPeer returned nil")
 		}
 
-		if peer.stream != stream {
+		if peer.Stream != stream {
 			t.Error("Stream not properly set")
 		}
 
