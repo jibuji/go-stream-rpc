@@ -29,11 +29,12 @@ type Stream interface {
 }
 
 type RpcPeer struct {
-	stream        Stream
+	Stream        Stream
 	services      map[string]interface{}
 	nextRequestID uint32
 	mu            sync.Mutex
 	writeMu       sync.Mutex
+	readMu        sync.Mutex
 	pendingCalls  map[uint32]chan []byte
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -52,7 +53,7 @@ func NewRpcPeer(stream Stream, opts ...RpcPeerOption) *RpcPeer {
 	ctx, cancel := context.WithCancel(session.CreateDefaultSessionContext())
 
 	peer := &RpcPeer{
-		stream:        stream,
+		Stream:        stream,
 		services:      make(map[string]interface{}),
 		nextRequestID: 1,
 		pendingCalls:  make(map[uint32]chan []byte),
@@ -182,8 +183,13 @@ func (p *RpcPeer) handleMessages() {
 }
 
 func (p *RpcPeer) readMessage() (uint32, uint32, string, []byte, error) {
+	p.readMu.Lock()
+	defer p.readMu.Unlock()
+
 	var length uint32
-	if err := binary.Read(p.stream, binary.BigEndian, &length); err != nil {
+	s := p.Stream
+
+	if err := binary.Read(s, binary.BigEndian, &length); err != nil {
 		return 0, 0, "", nil, err
 	}
 
@@ -192,7 +198,7 @@ func (p *RpcPeer) readMessage() (uint32, uint32, string, []byte, error) {
 	}
 
 	var requestID uint32
-	if err := binary.Read(p.stream, binary.BigEndian, &requestID); err != nil {
+	if err := binary.Read(s, binary.BigEndian, &requestID); err != nil {
 		return 0, 0, "", nil, err
 	}
 
@@ -202,26 +208,26 @@ func (p *RpcPeer) readMessage() (uint32, uint32, string, []byte, error) {
 	if (requestID & RequestIDMSB) == 0 {
 		// Request message
 		var methodNameLen uint8
-		if err := binary.Read(p.stream, binary.BigEndian, &methodNameLen); err != nil {
+		if err := binary.Read(s, binary.BigEndian, &methodNameLen); err != nil {
 			return 0, 0, "", nil, err
 		}
 
 		methodNameBytes := make([]byte, methodNameLen)
-		if _, err := io.ReadFull(p.stream, methodNameBytes); err != nil {
+		if _, err := io.ReadFull(s, methodNameBytes); err != nil {
 			return 0, 0, "", nil, err
 		}
 		methodName = string(methodNameBytes)
 
 		payloadLen := length - uint32(methodNameLen) - 5
 		payload = make([]byte, payloadLen)
-		if _, err := io.ReadFull(p.stream, payload); err != nil {
+		if _, err := io.ReadFull(s, payload); err != nil {
 			return 0, 0, "", nil, err
 		}
 	} else {
 		// Response message
 		payloadLen := length - 4
 		payload = make([]byte, payloadLen)
-		if _, err := io.ReadFull(p.stream, payload); err != nil {
+		if _, err := io.ReadFull(s, payload); err != nil {
 			return 0, 0, "", nil, err
 		}
 	}
@@ -235,24 +241,24 @@ func (p *RpcPeer) writeRequest(requestID uint32, methodName string, payload []by
 
 	methodNameBytes := []byte(methodName)
 	totalLength := uint32(len(payload) + len(methodNameBytes) + 5)
-
-	if err := binary.Write(p.stream, binary.BigEndian, totalLength); err != nil {
+	s := p.Stream
+	if err := binary.Write(s, binary.BigEndian, totalLength); err != nil {
 		return err
 	}
 
-	if err := binary.Write(p.stream, binary.BigEndian, requestID); err != nil {
+	if err := binary.Write(s, binary.BigEndian, requestID); err != nil {
 		return err
 	}
 
-	if err := binary.Write(p.stream, binary.BigEndian, uint8(len(methodNameBytes))); err != nil {
+	if err := binary.Write(s, binary.BigEndian, uint8(len(methodNameBytes))); err != nil {
 		return err
 	}
 
-	if _, err := p.stream.Write(methodNameBytes); err != nil {
+	if _, err := s.Write(methodNameBytes); err != nil {
 		return err
 	}
 
-	_, err := p.stream.Write(payload)
+	_, err := s.Write(payload)
 	return err
 }
 
@@ -272,16 +278,16 @@ func (p *RpcPeer) writeResponse(requestID uint32, payload []byte) error {
 	}
 
 	totalLength := uint32(len(payload) + 4)
-
-	if err := binary.Write(p.stream, binary.BigEndian, totalLength); err != nil {
+	s := p.Stream
+	if err := binary.Write(s, binary.BigEndian, totalLength); err != nil {
 		return err
 	}
 
-	if err := binary.Write(p.stream, binary.BigEndian, responseID); err != nil {
+	if err := binary.Write(s, binary.BigEndian, responseID); err != nil {
 		return err
 	}
 
-	_, err := p.stream.Write(payload)
+	_, err := s.Write(payload)
 	return err
 }
 
@@ -356,7 +362,7 @@ func (p *RpcPeer) Close() error {
 	}
 	p.pendingCalls = make(map[uint32]chan []byte)
 
-	return p.stream.Close()
+	return p.Stream.Close()
 }
 
 func (p *RpcPeer) Wait() error {
@@ -400,19 +406,20 @@ func (p *RpcPeer) writeErrorResponse(requestID uint32, code ErrorCode, message s
 	totalLength := uint32(4 + len(messageBytes))
 	responseID := (requestID & RequestIDMask) | RequestIDMSB | uint32(0x40000000)
 
-	if err := binary.Write(p.stream, binary.BigEndian, totalLength); err != nil {
+	s := p.Stream
+	if err := binary.Write(s, binary.BigEndian, totalLength); err != nil {
 		return err
 	}
 
-	if err := binary.Write(p.stream, binary.BigEndian, responseID); err != nil {
+	if err := binary.Write(s, binary.BigEndian, responseID); err != nil {
 		return err
 	}
 
-	if err := binary.Write(p.stream, binary.BigEndian, uint32(code)); err != nil {
+	if err := binary.Write(s, binary.BigEndian, uint32(code)); err != nil {
 		return err
 	}
 
-	_, err := p.stream.Write(messageBytes)
+	_, err := s.Write(messageBytes)
 	return err
 }
 
